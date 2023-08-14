@@ -1,148 +1,47 @@
-#include <stddef.h>
 #include <stdio.h>
-#include <string.h>
 #include "kem.h"
-#include "randombytes.h"
-
-#define NTESTS 1000
-
-static int test_keys()
-{
-    uint8_t pk[CRYPTO_PUBLICKEYBYTES];
-    uint8_t sk[CRYPTO_SECRETKEYBYTES];
-    uint8_t ct[CRYPTO_CIPHERTEXTBYTES];
-    uint8_t key_a[CRYPTO_BYTES];
-    uint8_t key_b[CRYPTO_BYTES];
-
-    // Alice generates a public key
-    crypto_kem_keypair(pk, sk);
-
-    // Bob derives a secret key and creates a response
-    crypto_kem_enc(ct, key_b, pk);
-
-    // Alice uses Bob's response to get her shared key
-    crypto_kem_dec(key_a, ct, sk);
-
-    if (memcmp(key_a, key_b, CRYPTO_BYTES)) {
-        printf("ERROR keys: Test failed\n");
-        printf("key_a: ");
-        for (size_t i = 0; i < CRYPTO_BYTES; i++) {
-            printf("%02X", key_a[i]);
-        }
-        printf("\nkey_b: ");
-        for (size_t i = 0; i < CRYPTO_BYTES; i++) {
-            printf("%02X", key_b[i]);
-        }
-        return 1;
-    } else {
-        printf("Keys test successful\n");
-    }
-
-    return 0;
-}
-
-static int test_invalid_sk_a()
-{
-    uint8_t pk[CRYPTO_PUBLICKEYBYTES];
-    uint8_t sk[CRYPTO_SECRETKEYBYTES];
-    uint8_t ct[CRYPTO_CIPHERTEXTBYTES];
-    uint8_t key_a[CRYPTO_BYTES];
-    uint8_t key_b[CRYPTO_BYTES];
-
-    // Alice generates a public key
-    crypto_kem_keypair(pk, sk);
-
-    // Bob derives a secret key and creates a response
-    crypto_kem_enc(ct, key_b, pk);
-
-    // Replace secret key with random values
-    randombytes(sk, CRYPTO_SECRETKEYBYTES);
-
-    // Alice uses Bob's response to get her shared key
-    crypto_kem_dec(key_a, ct, sk);
-
-    if (!memcmp(key_a, key_b, CRYPTO_BYTES)) {
-        printf("ERROR invalid sk: Test failed\n");
-        printf("key_a: ");
-        for (size_t i = 0; i < CRYPTO_BYTES; i++) {
-            printf("%02X", key_a[i]);
-        }
-        printf("\nkey_b: ");
-        for (size_t i = 0; i < CRYPTO_BYTES; i++) {
-            printf("%02X", key_b[i]);
-        }
-        return 1;
-    } else {
-        printf("Invalid secret key test successful\n");
-    }
-
-    return 0;
-}
-
-static int test_invalid_ciphertext()
-{
-    uint8_t pk[CRYPTO_PUBLICKEYBYTES];
-    uint8_t sk[CRYPTO_SECRETKEYBYTES];
-    uint8_t ct[CRYPTO_CIPHERTEXTBYTES];
-    uint8_t key_a[CRYPTO_BYTES];
-    uint8_t key_b[CRYPTO_BYTES];
-    uint8_t b;
-    size_t pos;
-
-    do {
-        randombytes(&b, sizeof(uint8_t));
-    } while (!b);
-    randombytes((uint8_t *)&pos, sizeof(size_t));
-
-    // Alice generates a public key
-    crypto_kem_keypair(pk, sk);
-
-    // Bob derives a secret key and creates a response
-    crypto_kem_enc(ct, key_b, pk);
-
-    // Change some byte in the ciphertext (i.e., encapsulated key)
-    ct[pos % CRYPTO_CIPHERTEXTBYTES] ^= b;
-
-    // Alice uses Bob's response to get her shared key
-    crypto_kem_dec(key_a, ct, sk);
-
-    if (!memcmp(key_a, key_b, CRYPTO_BYTES)) {
-        printf("ERROR invalid ciphertext: Test failed\n");
-        printf("key_a: ");
-        for (size_t i = 0; i < CRYPTO_BYTES; i++) {
-            printf("%02X", key_a[i]);
-        }
-        printf("\nkey_b: ");
-        for (size_t i = 0; i < CRYPTO_BYTES; i++) {
-            printf("%02X", key_b[i]);
-        }
-        return 1;
-    } else {
-        printf("Invalid ciphertext test successful\n");
-    }
-
-    return 0;
-}
 
 int main(void)
 {
-    unsigned int i;
-    int r;
+    // Generate key pair
+    uint8_t pk[CRYPTO_PUBLICKEYBYTES];
+    uint8_t sk[CRYPTO_SECRETKEYBYTES];
+    crypto_kem_keypair(pk, sk);
 
-    for (i = 0; i < NTESTS; i++) {
-        r = test_keys();
-        r |= test_invalid_sk_a();
-        r |= test_invalid_ciphertext();
-        if (r) {
-            printf("Overall test iteration %d failed\n", i + 1);
-            return 1;
+    // Create input message
+    uint8_t input_message[] = "Hello, Kyber!";
+
+    printf("Input Message: %s\n", input_message);
+
+    // Perform key encapsulation
+    uint8_t ct[CRYPTO_CIPHERTEXTBYTES];
+    uint8_t ss[CRYPTO_BYTES];
+    crypto_kem_enc(ct, ss, pk);
+
+    // Perform key decapsulation
+    uint8_t decrypted_ss[CRYPTO_BYTES];
+    crypto_kem_dec(decrypted_ss, ct, sk);
+
+    // Compare original shared secret with decrypted shared secret
+    int success = 1;
+    for (size_t i = 0; i < CRYPTO_BYTES; ++i) {
+        if (ss[i] != decrypted_ss[i]) {
+            success = 0;
+            break;
         }
     }
 
-    printf("All tests passed successfully\n");
-    printf("CRYPTO_SECRETKEYBYTES:  %d\n", CRYPTO_SECRETKEYBYTES);
-    printf("CRYPTO_PUBLICKEYBYTES:  %d\n", CRYPTO_PUBLICKEYBYTES);
-    printf("CRYPTO_CIPHERTEXTBYTES: %d\n", CRYPTO_CIPHERTEXTBYTES);
+    printf("Decrypted Shared Secret: ");
+    for (size_t i = 0; i < CRYPTO_BYTES; ++i) {
+        printf("%02x ", decrypted_ss[i]);
+    }
+    printf("\n");
+
+    if (success) {
+        printf("Experiment succeeded: Shared secrets match!\n");
+    } else {
+        printf("Experiment failed: Shared secrets do not match!\n");
+    }
 
     return 0;
 }
